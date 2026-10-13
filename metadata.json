@@ -1,0 +1,6 @@
+{
+  "name": "BureauSport - Suivi Collaboratif des Dossiers",
+  "description": "Plateforme collaborative de gestion et suivi des dossiers pour le bureau d'une association sportive (Sportif, Animations, Financier, Buvette, Technique).",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

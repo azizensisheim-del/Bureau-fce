@@ -1,0 +1,6 @@
+{
+  "summary": "Plan d'implémentation et architecture détaillée pour l'application de suivi collaboratif des dossiers du bureau de l'association sportive (Sportif, Animations, Financier, Buvette, Technique), avec gestion des rôles, tableau de bord, vues Liste/Kanban/Calendrier, commentaires, pièces jointes sous forme de liens externes, historique et synchronisation locale avec connecteur Firebase prêt au déploiement.",
+  "updatedAt": "2026-10-13T13:30:15.690226364Z",
+  "requestFeedback": true,
+  "userFacing": true
+}
