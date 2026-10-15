@@ -32,9 +32,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [authError, setAuthError] = useState<string | null>(null);
   const [clubSettings, setClubSettings] = useState(DEFAULT_CLUB_SETTINGS);
 
-  useEffect(() => onSnapshot(collection(db, 'users'), (snap) => setUsers(snap.docs.map((item) => item.data() as User))), []);
-  useEffect(() => onSnapshot(doc(db, 'config', 'club'), (snap) => snap.exists() && setClubSettings(snap.data() as ClubSettings)), []);
   useEffect(() => onAuthStateChanged(auth, (account) => { setFirebaseUid(account?.uid || null); if (!account) setCurrentUser(null); setLoading(false); }), []);
+  useEffect(() => {
+    if (!firebaseUid) { setUsers([]); return; }
+    const stopUsers = onSnapshot(collection(db, 'users'), (snap) => setUsers(snap.docs.map((item) => item.data() as User)));
+    const stopSettings = onSnapshot(doc(db, 'config', 'club'), (snap) => snap.exists() && setClubSettings(snap.data() as ClubSettings));
+    return () => { stopUsers(); stopSettings(); };
+  }, [firebaseUid]);
   useEffect(() => { if (firebaseUid) setCurrentUser(users.find((user) => user.id === firebaseUid) || null); }, [firebaseUid, users]);
 
   const signIn = async (email: string, password: string) => { setAuthError(null); try { await signInWithEmailAndPassword(auth, email.trim(), password); } catch (error) { const message = authMessage(error); setAuthError(message); throw new Error(message); } };
