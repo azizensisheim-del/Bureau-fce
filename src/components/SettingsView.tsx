@@ -74,7 +74,7 @@ export const SettingsView: React.FC = () => {
   }
 
   // Handle saving general settings & pole leads
-  const handleSaveClubSettings = (e: React.FormEvent) => {
+  const handleSaveClubSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     const updated: ClubSettings = {
       clubName: clubName.trim(),
@@ -83,7 +83,7 @@ export const SettingsView: React.FC = () => {
       imminentDeadlineDays: Number(imminentDays),
       poleLeads,
     };
-    updateClubSettings(updated);
+    await updateClubSettings(updated);
     setSaveSuccess(true);
     setTimeout(() => setSaveSuccess(false), 3000);
   };
@@ -124,7 +124,7 @@ export const SettingsView: React.FC = () => {
   };
 
   // Submit user form
-  const handleUserModalSubmit = (e: React.FormEvent) => {
+  const handleUserModalSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!userModalName.trim()) {
       setUserModalError('Le nom complet est obligatoire.');
@@ -135,7 +135,7 @@ export const SettingsView: React.FC = () => {
       return;
     }
 
-    saveUser({
+    try { await saveUser({
       id: editingUser ? editingUser.id : undefined,
       name: userModalName.trim(),
       email: userModalEmail.trim(),
@@ -144,15 +144,13 @@ export const SettingsView: React.FC = () => {
       assignedPole: userModalPole ? (userModalPole as PoleId) : undefined,
       phone: userModalPhone.trim() || undefined,
       avatar: userModalAvatar.trim() || undefined,
-    });
-
-    setIsUserModalOpen(false);
+    }); setIsUserModalOpen(false); } catch (error) { setUserModalError(error instanceof Error ? error.message : 'Enregistrement impossible.'); }
   };
 
   // Handle delete user
-  const handleDeleteUser = (u: User) => {
+  const handleDeleteUser = async (u: User) => {
     if (window.confirm(`Confirmer la suppression de "${u.name}" du bureau ?`)) {
-      const res = deleteUser(u.id);
+      const res = await deleteUser(u.id);
       if (!res.success) {
         setDeleteError(res.message || 'Erreur lors de la suppression.');
         setTimeout(() => setDeleteError(null), 4000);

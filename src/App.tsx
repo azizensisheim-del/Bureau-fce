@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { storageService } from './services/storageService';
+import { firebaseDataService } from './services/firebaseDataService';
 import { Dossier, PoleId, DossierStatus, DossierPriority, Comment, AttachmentLink, HistoryItem } from './types';
 import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
@@ -12,9 +12,10 @@ import { DossierDetailModal } from './components/DossierDetailModal';
 import { DossierFormModal } from './components/DossierFormModal';
 import { DataExportModal } from './components/DataExportModal';
 import { SettingsView } from './components/SettingsView';
+import { LoginView } from './components/LoginView';
 
 function AppContent() {
-  const { currentUser } = useAuth();
+  const { currentUser, users } = useAuth();
 
   // Primary state
   const [dossiers, setDossiers] = useState<Dossier[]>([]);
@@ -36,17 +37,14 @@ function AppContent() {
   const [isExportOpen, setIsExportOpen] = useState(false);
 
   // Load and refresh state from storage
-  const loadData = useCallback(() => {
-    storageService.init();
-    setDossiers(storageService.getDossiers());
-    setComments(storageService.getComments());
-    setAttachments(storageService.getAttachments());
-    setHistory(storageService.getHistory());
-  }, []);
-
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    return firebaseDataService.subscribe((data) => {
+      setDossiers(data.dossiers);
+      setComments(data.comments);
+      setAttachments(data.attachments);
+      setHistory(data.history);
+    }, (error) => console.error('Synchronisation Firestore:', error));
+  }, []);
 
   // Keep selected dossier up-to-date if it changes in state
   useEffect(() => {
@@ -107,48 +105,47 @@ function AppContent() {
   }, [dossiers, todayStr]);
 
   // CRUD actions
-  const handleSaveDossier = (
+  const handleSaveDossier = async (
     data: Partial<Dossier> & { title: string; pole: PoleId; priority: DossierPriority }
   ) => {
-    storageService.saveDossier(data, currentUser);
-    loadData();
+    if (!currentUser) return;
+    await firebaseDataService.saveDossier(data, currentUser);
     setEditingDossier(null);
   };
 
-  const handleUpdateStatus = (dossierId: string, status: DossierStatus) => {
-    storageService.updateDossierStatus(dossierId, status, currentUser);
-    loadData();
+  const handleUpdateStatus = async (dossierId: string, status: DossierStatus) => {
+    if (!currentUser) return;
+    await firebaseDataService.updateStatus(dossierId, status, currentUser);
   };
 
-  const handleToggleArchive = (dossierId: string) => {
-    storageService.toggleArchiveDossier(dossierId, currentUser);
-    loadData();
+  const handleToggleArchive = async (dossierId: string) => {
+    if (!currentUser) return;
+    const dossier = dossiers.find((item) => item.id === dossierId);
+    if (dossier) await firebaseDataService.toggleArchive(dossier, currentUser);
     if (selectedDossier?.id === dossierId) {
       setSelectedDossier(null);
     }
   };
 
-  const handleDeleteDossier = (dossierId: string) => {
-    storageService.deleteDossier(dossierId);
-    loadData();
+  const handleDeleteDossier = async (dossierId: string) => {
+    await firebaseDataService.deleteDossier(dossierId);
     if (selectedDossier?.id === dossierId) {
       setSelectedDossier(null);
     }
   };
 
-  const handleAddComment = (dossierId: string, content: string) => {
-    storageService.addComment(dossierId, content, currentUser);
-    loadData();
+  const handleAddComment = async (dossierId: string, content: string) => {
+    if (!currentUser) return;
+    await firebaseDataService.addComment(dossierId, content, currentUser);
   };
 
-  const handleAddAttachment = (dossierId: string, title: string, url: string) => {
-    storageService.addAttachment(dossierId, title, url, currentUser);
-    loadData();
+  const handleAddAttachment = async (dossierId: string, title: string, url: string) => {
+    if (!currentUser) return;
+    await firebaseDataService.addAttachment(dossierId, title, url, currentUser);
   };
 
-  const handleRemoveAttachment = (attachmentId: string) => {
-    storageService.removeAttachment(attachmentId);
-    loadData();
+  const handleRemoveAttachment = async (attachmentId: string) => {
+    await firebaseDataService.removeAttachment(attachmentId);
   };
 
   // Quick navigation handlers
@@ -176,8 +173,6 @@ function AppContent() {
       setCurrentView('list');
     }
   };
-
-  const users = useMemo(() => storageService.getUsers(), []);
 
   // Filtered comments & attachments for currently inspected dossier
   const currentDossierComments = useMemo(() => {
@@ -344,7 +339,7 @@ function AppContent() {
       <DataExportModal
         isOpen={isExportOpen}
         onClose={() => setIsExportOpen(false)}
-        onDataReload={loadData}
+        onDataReload={() => undefined}
       />
     </div>
   );
@@ -353,7 +348,13 @@ function AppContent() {
 export default function App() {
   return (
     <AuthProvider>
-      <AppContent />
+      <AuthenticatedApp />
     </AuthProvider>
   );
+}
+
+function AuthenticatedApp() {
+  const { currentUser, loading } = useAuth();
+  if (loading) return <div className="min-h-screen grid place-items-center text-slate-500">Connexion à Firebase…</div>;
+  return currentUser ? <AppContent /> : <LoginView />;
 }

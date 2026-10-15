@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { LayoutDashboard, ListFilter, Columns3, Calendar, Plus, CloudUpload, UserCheck, Shield, Settings } from 'lucide-react';
+import { LayoutDashboard, ListFilter, Columns3, Calendar, Plus, CloudUpload, LogOut, Settings } from 'lucide-react';
 
 interface NavbarProps {
   currentView: 'dashboard' | 'list' | 'kanban' | 'calendar' | 'settings';
@@ -15,7 +15,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenCreate,
   onOpenExportModal,
 }) => {
-  const { currentUser, users, switchUser, canCreateDossier, isAdmin } = useAuth();
+  const { currentUser, signOut, canCreateDossier, isAdmin } = useAuth();
   const [showUserMenu, setShowUserMenu] = useState(false);
 
   return (
@@ -157,51 +157,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                   <div className="text-slate-500 text-[11px]">{currentUser.roleTitle}</div>
                 </div>
 
-                <div className="px-3 py-1.5 text-slate-400 font-medium text-[11px] uppercase tracking-wider">
-                  Changer de profil (Simulation des rôles) :
-                </div>
-
-                <div className="max-h-64 overflow-y-auto divide-y divide-slate-50">
-                  {users.map((user) => (
-                    <button
-                      key={user.id}
-                      onClick={() => {
-                        switchUser(user.id);
-                        setShowUserMenu(false);
-                      }}
-                      className={`w-full text-left px-3 py-2 hover:bg-slate-50 flex items-center gap-2.5 transition-colors ${
-                        user.id === currentUser.id ? 'bg-slate-50 font-medium' : ''
-                      }`}
-                    >
-                      <div className="w-6 h-6 rounded-full overflow-hidden shrink-0 bg-slate-200">
-                        <img
-                          src={user.avatar}
-                          alt={user.name}
-                          className="w-full h-full object-cover"
-                          referrerPolicy="no-referrer"
-                        />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="text-slate-900 truncate flex items-center gap-1.5">
-                          {user.name}
-                          {user.role === 'admin' && (
-                            <span className="text-[10px] text-red-700 bg-red-50 px-1.5 py-0.2 rounded font-medium">Admin</span>
-                          )}
-                          {user.role === 'member' && (
-                            <span className="text-[10px] text-blue-700 bg-blue-50 px-1.5 py-0.2 rounded font-medium">Membre</span>
-                          )}
-                          {user.role === 'reader' && (
-                            <span className="text-[10px] text-slate-600 bg-slate-100 px-1.5 py-0.2 rounded font-medium">Lecteur</span>
-                          )}
-                        </div>
-                        <div className="text-slate-500 text-[11px] truncate">{user.roleTitle}</div>
-                      </div>
-                      {user.id === currentUser.id && (
-                        <UserCheck className="w-4 h-4 text-blue-600 shrink-0" />
-                      )}
-                    </button>
-                  ))}
-                </div>
+                <button onClick={() => void signOut()} className="w-full px-3 py-2.5 text-left text-red-700 hover:bg-red-50 flex items-center gap-2 font-medium">
+                  <LogOut className="w-4 h-4" /> Se déconnecter
+                </button>
               </div>
             )}
           </div>

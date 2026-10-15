@@ -1,131 +1,64 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { User, ClubSettings, DEFAULT_CLUB_SETTINGS, UserRole } from '../types';
-import { storageService } from '../services/storageService';
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { createUserWithEmailAndPassword, onAuthStateChanged, signInWithEmailAndPassword, signOut as firebaseSignOut } from 'firebase/auth';
+import { collection, deleteDoc, doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { auth, db } from '../services/firebaseClient';
+import { ClubSettings, DEFAULT_CLUB_SETTINGS, User, UserRole } from '../types';
 
 interface AuthContextType {
-  currentUser: User;
-  users: User[];
-  switchUser: (userId: string) => void;
-  refreshUsers: () => void;
-  saveUser: (userData: Partial<User> & { name: string; email: string; role: UserRole }) => User;
-  deleteUser: (userId: string) => { success: boolean; message?: string };
-  clubSettings: ClubSettings;
-  updateClubSettings: (settings: ClubSettings) => void;
-  isAdmin: boolean;
-  isMember: boolean;
-  isReader: boolean;
-  canCreateDossier: boolean;
-  canEditDossier: boolean;
-  canComment: boolean;
-  canArchive: boolean;
-  canDelete: boolean;
-  loginWithEmail: (email: string, role?: string) => boolean;
+  currentUser: User; users: User[]; loading: boolean; authError: string | null;
+  signIn: (email: string, password: string) => Promise<void>;
+  signUp: (name: string, email: string, password: string) => Promise<void>;
+  signOut: () => Promise<void>;
+  saveUser: (data: Partial<User> & { name: string; email: string; role: UserRole }) => Promise<User>;
+  deleteUser: (id: string) => Promise<{ success: boolean; message?: string }>;
+  clubSettings: ClubSettings; updateClubSettings: (settings: ClubSettings) => Promise<void>;
+  isAdmin: boolean; isMember: boolean; isReader: boolean; canCreateDossier: boolean;
+  canEditDossier: boolean; canComment: boolean; canArchive: boolean; canDelete: boolean;
 }
-
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const authMessage = (error: unknown) => {
+  const code = typeof error === 'object' && error && 'code' in error ? String(error.code) : '';
+  if (code.includes('invalid-credential')) return 'Adresse e-mail ou mot de passe incorrect.';
+  if (code.includes('email-already-in-use')) return 'Cette adresse e-mail possède déjà un compte.';
+  if (code.includes('weak-password')) return 'Le mot de passe doit contenir au moins 6 caractères.';
+  return 'La connexion à Firebase a échoué. Réessayez dans quelques instants.';
+};
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [users, setUsers] = useState<User[]>([]);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [clubSettings, setClubSettings] = useState<ClubSettings>(DEFAULT_CLUB_SETTINGS);
+  const [firebaseUid, setFirebaseUid] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [clubSettings, setClubSettings] = useState(DEFAULT_CLUB_SETTINGS);
 
-  const refreshUsers = useCallback(() => {
-    storageService.init();
-    const loadedUsers = storageService.getUsers();
-    setUsers(loadedUsers);
+  useEffect(() => onSnapshot(collection(db, 'users'), (snap) => setUsers(snap.docs.map((item) => item.data() as User))), []);
+  useEffect(() => onSnapshot(doc(db, 'config', 'club'), (snap) => snap.exists() && setClubSettings(snap.data() as ClubSettings)), []);
+  useEffect(() => onAuthStateChanged(auth, (account) => { setFirebaseUid(account?.uid || null); if (!account) setCurrentUser(null); setLoading(false); }), []);
+  useEffect(() => { if (firebaseUid) setCurrentUser(users.find((user) => user.id === firebaseUid) || null); }, [firebaseUid, users]);
 
-    const currentId = storageService.getCurrentUserId();
-    const found = loadedUsers.find((u) => u.id === currentId) || loadedUsers[0];
-    setCurrentUser(found);
-
-    setClubSettings(storageService.getClubSettings());
-  }, []);
-
-  useEffect(() => {
-    refreshUsers();
-  }, [refreshUsers]);
-
-  const switchUser = (userId: string) => {
-    const user = users.find((u) => u.id === userId);
-    if (user) {
-      setCurrentUser(user);
-      storageService.setCurrentUserId(userId);
-    }
+  const signIn = async (email: string, password: string) => { setAuthError(null); try { await signInWithEmailAndPassword(auth, email.trim(), password); } catch (error) { const message = authMessage(error); setAuthError(message); throw new Error(message); } };
+  const signUp = async (name: string, email: string, password: string) => {
+    setAuthError(null);
+    try {
+      const credential = await createUserWithEmailAndPassword(auth, email.trim(), password);
+      const profile: User = { id: credential.user.uid, name: name.trim(), email: email.trim(), role: 'reader', roleTitle: 'Bénévole Lecteur', avatar: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name)}` };
+      await setDoc(doc(db, 'users', profile.id), profile); setCurrentUser(profile);
+    } catch (error) { const message = authMessage(error); setAuthError(message); throw new Error(message); }
   };
-
-  const saveUser = (userData: Partial<User> & { name: string; email: string; role: UserRole }) => {
-    const saved = storageService.saveUser(userData);
-    refreshUsers();
-    return saved;
+  const saveUser = async (data: Partial<User> & { name: string; email: string; role: UserRole }) => {
+    if (!data.id) throw new Error("Le membre doit d’abord créer son compte depuis l’écran de connexion.");
+    const saved = { ...users.find((u) => u.id === data.id), ...data } as User;
+    await setDoc(doc(db, 'users', saved.id), saved, { merge: true }); return saved;
   };
-
-  const deleteUser = (userId: string) => {
-    const res = storageService.deleteUser(userId);
-    if (res.success) {
-      refreshUsers();
-    }
-    return res;
+  const deleteUser = async (id: string) => {
+    const target = users.find((u) => u.id === id);
+    if (target?.role === 'admin' && users.filter((u) => u.role === 'admin').length <= 1) return { success: false, message: 'Impossible de supprimer le dernier administrateur.' };
+    await deleteDoc(doc(db, 'users', id)); return { success: true };
   };
+  const updateClubSettings = async (settings: ClubSettings) => { await setDoc(doc(db, 'config', 'club'), settings); setClubSettings(settings); };
+  const rights = useMemo(() => { const isAdmin = currentUser?.role === 'admin'; const isMember = currentUser?.role === 'member'; return { isAdmin, isMember, isReader: currentUser?.role === 'reader', canCreateDossier: isAdmin || isMember, canEditDossier: isAdmin || isMember, canComment: Boolean(currentUser), canArchive: isAdmin || isMember, canDelete: isAdmin }; }, [currentUser]);
 
-  const updateClubSettings = (settings: ClubSettings) => {
-    storageService.saveClubSettings(settings);
-    setClubSettings(settings);
-  };
-
-  const loginWithEmail = (email: string) => {
-    const existing = users.find((u) => u.email.toLowerCase() === email.toLowerCase());
-    if (existing) {
-      switchUser(existing.id);
-      return true;
-    }
-    return false;
-  };
-
-  if (!currentUser) {
-    return <div className="min-h-screen flex items-center justify-center text-slate-500 text-sm">Chargement du bureau...</div>;
-  }
-
-  const isAdmin = currentUser.role === 'admin';
-  const isMember = currentUser.role === 'member';
-  const isReader = currentUser.role === 'reader';
-
-  const canCreateDossier = isAdmin || isMember;
-  const canEditDossier = isAdmin || isMember;
-  const canComment = true; // Readers can also comment
-  const canArchive = isAdmin || isMember;
-  const canDelete = isAdmin;
-
-  return (
-    <AuthContext.Provider
-      value={{
-        currentUser,
-        users,
-        switchUser,
-        refreshUsers,
-        saveUser,
-        deleteUser,
-        clubSettings,
-        updateClubSettings,
-        isAdmin,
-        isMember,
-        isReader,
-        canCreateDossier,
-        canEditDossier,
-        canComment,
-        canArchive,
-        canDelete,
-        loginWithEmail,
-      }}
-    >
-      {children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={{ currentUser: currentUser as User, users, loading, authError, signIn, signUp, signOut: () => firebaseSignOut(auth), saveUser, deleteUser, clubSettings, updateClubSettings, ...rights }}>{children}</AuthContext.Provider>;
 };
-
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
-};
+export const useAuth = () => { const value = useContext(AuthContext); if (!value) throw new Error('useAuth doit être utilisé dans AuthProvider'); return value; };
