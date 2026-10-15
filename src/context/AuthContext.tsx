@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { createUserWithEmailAndPassword, onAuthStateChanged, signInWithEmailAndPassword, signOut as firebaseSignOut } from 'firebase/auth';
-import { collection, deleteDoc, doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { collection, deleteDoc, doc, getDoc, onSnapshot, setDoc, writeBatch } from 'firebase/firestore';
 import { auth, db } from '../services/firebaseClient';
 import { ClubSettings, DEFAULT_CLUB_SETTINGS, User, UserRole } from '../types';
 
@@ -47,7 +47,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const credential = await createUserWithEmailAndPassword(auth, email.trim(), password);
       const profile: User = { id: credential.user.uid, name: name.trim(), email: email.trim(), role: 'reader', roleTitle: 'Bénévole Lecteur', avatar: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name)}` };
-      await setDoc(doc(db, 'users', profile.id), profile); setCurrentUser(profile);
+      await setDoc(doc(db, 'users', profile.id), profile);
+      const bootstrapRef = doc(db, 'config', 'bootstrap');
+      if (!(await getDoc(bootstrapRef)).exists()) {
+        const batch = writeBatch(db);
+        profile.role = 'admin'; profile.roleTitle = 'Administrateur du Bureau';
+        batch.update(doc(db, 'users', profile.id), { role: profile.role, roleTitle: profile.roleTitle });
+        batch.set(bootstrapRef, { uid: profile.id, createdAt: new Date().toISOString() });
+        try { await batch.commit(); } catch { profile.role = 'reader'; profile.roleTitle = 'Bénévole Lecteur'; }
+      }
+      setCurrentUser(profile);
     } catch (error) { const message = authMessage(error); setAuthError(message); throw new Error(message); }
   };
   const saveUser = async (data: Partial<User> & { name: string; email: string; role: UserRole }) => {

@@ -13,7 +13,12 @@ service cloud.firestore {
       allow create: if signedIn() && request.auth.uid == userId
                     && request.resource.data.role == 'reader';
       allow update: if isAdmin() || (signedIn() && request.auth.uid == userId
-                    && request.resource.data.role == resource.data.role);
+                    && request.resource.data.role == resource.data.role)
+                    || (signedIn() && request.auth.uid == userId
+                    && !exists(/databases/$(database)/documents/config/bootstrap)
+                    && existsAfter(/databases/$(database)/documents/config/bootstrap)
+                    && getAfter(/databases/$(database)/documents/config/bootstrap).data.uid == request.auth.uid
+                    && request.resource.data.role == 'admin');
       allow delete: if isAdmin() && request.auth.uid != userId;
     }
     match /dossiers/{id} {
@@ -35,9 +40,16 @@ service cloud.firestore {
       allow create: if signedIn() && request.resource.data.userId == request.auth.uid;
       allow update, delete: if false;
     }
+    match /config/bootstrap {
+      allow read: if signedIn();
+      allow create: if signedIn()
+                    && !exists(/databases/$(database)/documents/config/bootstrap)
+                    && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if false;
+    }
     match /config/{id} {
       allow read: if signedIn();
-      allow write: if isAdmin();
+      allow write: if isAdmin() && id != 'bootstrap';
     }
   }
 }
